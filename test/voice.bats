@@ -153,6 +153,7 @@ state_file() {
     .mise/tasks/capture/_default \
     .mise/tasks/capture/start \
     .mise/tasks/capture/stop \
+    .mise/tasks/capture/cancel \
     .mise/tasks/capture/toggle \
     .mise/tasks/devices \
     .mise/tasks/mic/configure \
@@ -204,6 +205,26 @@ state_file() {
   [ -s "$capture_dir/audio.wav" ]
   [ "$(cat "$capture_dir/transcript.txt")" = "$VOICE_TEST_TRANSCRIPT" ]
   grep -q "$VOICE_TEST_TRANSCRIPT" "$capture_dir/capture.md"
+}
+
+@test "capture:cancel stops without transcribing and clears state" {
+  run voice capture:start --device ':test' --json
+  [ "$status" -eq 0 ]
+  capture_dir="$(jq -r '.capture_dir' <<< "$output")"
+
+  run voice capture:cancel --json
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.status' <<< "$output")" = "cancelled" ]
+  [ ! -f "$(state_file)" ]
+  [ ! -f "$capture_dir/transcript.txt" ]
+  [ ! -s "$VOICE_TEST_MONKEYS_LOG" ]
+  grep -q 'status: "cancelled"' "$capture_dir/capture.md"
+}
+
+@test "capture:cancel fails clearly when idle" {
+  run voice capture:cancel --json
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no active recording state"* ]]
 }
 
 @test "capture:toggle starts when idle and stops when active" {

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+#MISE description="Cancel the active background voice recording without transcribing it"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON instead of human-readable output"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+json="${usage_json:-false}"
+grace_attempts="${VOICE_STOP_GRACE_ATTEMPTS:-${VOICE_CAPTURE_STOP_GRACE_ATTEMPTS:-50}}"
+term_attempts="${VOICE_STOP_TERM_ATTEMPTS:-${VOICE_CAPTURE_STOP_TERM_ATTEMPTS:-20}}"
+
+state_file="$(vc_state_file)"
+if [ ! -f "$state_file" ]; then
+  printf 'voice: no active recording state found\n' >&2
+  exit 1
+fi
+
+pid="$(jq -r '.pid // empty' "$state_file")"
+capture_dir="$(jq -r '.capture_dir // empty' "$state_file")"
+audio="$(jq -r '.audio // empty' "$state_file")"
+device="$(jq -r '.device // "unknown"' "$state_file")"
+max_duration="$(jq -r '.max_duration_seconds // 0' "$state_file")"
+
+if [ -z "$capture_dir" ] || [ -z "$audio" ]; then
+  printf 'voice: invalid recording state: %s\n' "$state_file" >&2
+  exit 1
+fi
+
+if vc_pid_alive "$pid"; then
+  if ! kill -INT "$pid" >/dev/null 2>&1; then
+    : # Process may exit between liveness check and signal.
+  fi
+
+  for _ in $(seq 1 "$grace_attempts"); do
+    if ! vc_pid_alive "$pid"; then
+      break
+    fi
+    sleep 0.1
+  done
+
+  if vc_pid_alive "$pid"; then
+    if ! kill -TERM "$pid" >/dev/null 2>&1; then
+      : # Process may already have exited.
+    fi
+    for _ in $(seq 1 "$term_attempts"); do
+      if ! vc_pid_alive "$pid"; then
+        break
+      fi
+      sleep 0.1
+    done
+  fi
+fi
+
+markdown_file="$(vc_write_markdown "$capture_dir" "cancelled" "$device" "$max_duration")"
+vc_clear_state
+
+if [ "$json" = "true" ]; then
+  jq -n \
+    --arg status "cancelled" \
+    --arg capture_id "$(vc_capture_id_from_dir "$capture_dir")" \
+    --arg capture_dir "$capture_dir" \
+    --arg audio "$audio" \
+    --arg markdown "$markdown_file" \
+    --arg device "$device" \
+    --argjson max_duration_seconds "$max_duration" \
+    '{status:$status,capture_id:$capture_id,capture_dir:$capture_dir,audio:$audio,markdown:$markdown,device:$device,max_duration_seconds:$max_duration_seconds}'
+  exit 0
+fi
+
+"$GUM" style --bold --foreground 214 -- "⦸ Voice capture cancelled"
+printf 'Capture: %s\n' "$capture_dir"
+printf 'Audio: %s\n' "$audio"

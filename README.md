@@ -4,7 +4,7 @@
 
 <pre>
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│ ▄▆▁▂▅▁█▂█▄▂▂▆▂▇▃▄█▂▂▄▆▁▇▁▆▇▄▂▂▄▃▂▄▅▁▂▆▂▁▄▅▃▅▄▇▄▄▇▅▆▄▃▅█▁▃▆▅▁▆█▅▆▄▄▃▂▇█▁▄ │
+│ ▄▆▁▂▅▁█▂█▄▂▂▆▂▇▃▄█▂▂▄▆▁▇▁▆▇▄▂▂▄▃▂▄▅▁▂▆▂▁▄▅▃▅▄▇▄▄▇▅▆▄▃▅█▁▃▆▅▁▆█▅▆▄▄▃▂▇█▁▅ │
 │ mic  →  audio.wav  →  transcript.txt  →  capture.md  →  agent/editor       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 </pre>
@@ -13,8 +13,8 @@
 A microphone is just another input surface.
 
 ![shape: mise + BATS](https://img.shields.io/badge/shape-mise%20%2B%20BATS-4EAA25?style=flat&logo=gnubash&logoColor=white)
-[![tests: 14](https://img.shields.io/badge/tests-14-brightgreen?style=flat)](test/)
-![tasks: 13](https://img.shields.io/badge/tasks-13-8b5cf6?style=flat)
+[![tests: 16](https://img.shields.io/badge/tests-16-brightgreen?style=flat)](test/)
+![tasks: 14](https://img.shields.io/badge/tasks-14-8b5cf6?style=flat)
 ![lints: 9](https://img.shields.io/badge/lints-9-blue?style=flat)
 ![README: TSX](https://img.shields.io/badge/README-TSX-f472b6?style=flat)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](LICENSE)
@@ -56,7 +56,8 @@ mise run capture --duration 5 --json
 # Background/hotkey shape: start now, stop+transcribe later.
 mise run capture:toggle --max-duration 300 --json
 mise run capture:status --json
-mise run capture:toggle --json
+mise run capture:toggle --json  # stop + transcribe
+# Alternative while recording: mise run capture:cancel --json
 
 # List saved capture artifacts.
 mise run recording:list
@@ -70,6 +71,7 @@ After shiv install, the same tasks become ordinary command words:
 voice capture
 voice capture:start --max-duration 300
 voice capture:stop --json
+voice capture:cancel --json
 voice capture:toggle
 voice capture:status
 voice devices
@@ -84,10 +86,10 @@ voice recording:list --json
 
 ```
 /voice
-  idle     → start background capture, show recording status
-  active   → stop, transcribe, paste transcript into the editor
-  long     → let Pi collapse it with normal paste handling
-  unsure   → user edits before sending
+  opens an overlay
+  Enter/Space → stop, transcribe, paste transcript into the editor
+  Esc         → cancel without transcribing
+  unsure      → user edits before sending
 ```
 
 ## Artifact layout
@@ -116,6 +118,7 @@ Background recording state lives under `${XDG_STATE_HOME:-~/.local/state}/voice/
 capture          Record, transcribe, and render one local voice capture
 capture:start    Start a background voice recording
 capture:stop     Stop the active background voice recording and transcribe it
+capture:cancel   Cancel the active background voice recording without transcribing it
 capture:toggle   Toggle background voice recording on or off
 capture:status   Show background voice recording status
 devices          List macOS AVFoundation recording devices visible to ffmpeg
