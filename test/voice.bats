@@ -78,7 +78,11 @@ mkdir -p "$(dirname "$out")"
 write_audio() {
   printf 'mock audio from pid %s\ndevice=%s\n' "$$" "$device" > "$out"
 }
-trap 'write_audio; exit 0' INT TERM
+if [ "${VOICE_TEST_FFMPEG_IGNORE_SIGNALS:-0}" = "1" ]; then
+  trap ':' INT TERM
+else
+  trap 'write_audio; exit 0' INT TERM
+fi
 if [ "${VOICE_TEST_FFMPEG_EXIT_IMMEDIATELY:-0}" = "1" ]; then
   exit 2
 fi
@@ -153,6 +157,7 @@ state_file() {
     .mise/tasks/capture/_default \
     .mise/tasks/capture/start \
     .mise/tasks/capture/stop \
+    .mise/tasks/capture/cancel \
     .mise/tasks/capture/toggle \
     .mise/tasks/devices \
     .mise/tasks/mic/configure \
@@ -204,6 +209,40 @@ state_file() {
   [ -s "$capture_dir/audio.wav" ]
   [ "$(cat "$capture_dir/transcript.txt")" = "$VOICE_TEST_TRANSCRIPT" ]
   grep -q "$VOICE_TEST_TRANSCRIPT" "$capture_dir/capture.md"
+}
+
+@test "capture:cancel stops without transcribing and clears state" {
+  run voice capture:start --device ':test' --json
+  [ "$status" -eq 0 ]
+  capture_dir="$(jq -r '.capture_dir' <<< "$output")"
+
+  run voice capture:cancel --json
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.status' <<< "$output")" = "cancelled" ]
+  [ ! -f "$(state_file)" ]
+  [ ! -f "$capture_dir/transcript.txt" ]
+  [ ! -s "$VOICE_TEST_MONKEYS_LOG" ]
+  grep -q 'status: "cancelled"' "$capture_dir/capture.md"
+}
+
+@test "capture:cancel fails clearly when idle" {
+  run voice capture:cancel --json
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no active recording state"* ]]
+}
+
+@test "capture:cancel preserves state when recorder will not exit" {
+  VOICE_TEST_FFMPEG_IGNORE_SIGNALS=1 run voice capture:start --device ':test' --json
+  [ "$status" -eq 0 ]
+  pid="$(jq -r '.pid' <<< "$output")"
+
+  run voice capture:cancel --json
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"recorder did not exit after cancel signal"* ]]
+  [ -f "$(state_file)" ]
+  kill -0 "$pid"
+  kill -KILL "$pid"
+  rm -f "$(state_file)"
 }
 
 @test "capture:toggle starts when idle and stops when active" {

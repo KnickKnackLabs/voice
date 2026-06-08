@@ -145,6 +145,7 @@ const commandDeck = [
   "capture",
   "capture:start",
   "capture:stop",
+  "capture:cancel",
   "capture:toggle",
   "capture:status",
   "devices",
@@ -225,7 +226,8 @@ mise run capture --duration 5 --json
 # Background/hotkey shape: start now, stop+transcribe later.
 mise run capture:toggle --max-duration 300 --json
 mise run capture:status --json
-mise run capture:toggle --json
+mise run capture:toggle --json  # stop + transcribe
+# Alternative while recording: mise run capture:cancel --json
 
 # List saved capture artifacts.
 mise run recording:list`}</CodeBlock>
@@ -239,6 +241,7 @@ mise run recording:list`}</CodeBlock>
       <CodeBlock lang="bash">{`voice capture
 voice capture:start --max-duration 300
 voice capture:stop --json
+voice capture:cancel --json
 voice capture:toggle
 voice capture:status
 voice devices
@@ -251,10 +254,10 @@ voice recording:list --json`}</CodeBlock>
 
     <Section title="Pi extension target">
       <CodeBlock>{`/voice
-  idle     → start background capture, show recording status
-  active   → stop, transcribe, paste transcript into the editor
-  long     → let Pi collapse it with normal paste handling
-  unsure   → user edits before sending`}</CodeBlock>
+  opens an overlay
+  Enter/Space → stop, transcribe, paste transcript into the editor
+  Esc         → cancel without transcribing
+  unsure      → user edits before sending`}</CodeBlock>
     </Section>
 
     <Section title="Artifact layout">
