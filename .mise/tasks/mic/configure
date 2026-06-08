@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="Save the default microphone device for voice capture"
-#USAGE flag "--device <device>" default="" help="AVFoundation input such as :1; if omitted, probe and save the loudest live input"
+#MISE description="Choose and save the default microphone device for voice capture"
+#USAGE flag "--device <device>" default="" help="AVFoundation input such as :1; if omitted, probe and choose interactively"
 #USAGE flag "--yes" default=#false help="Approve writing voice config and any microphone probe"
-#USAGE flag "--json" default=#false help="Print machine-readable JSON"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON; without --device, saves the loudest live input"
 
 set -euo pipefail
 
@@ -13,20 +13,49 @@ yes="${usage_yes:-false}"
 json="${usage_json:-false}"
 device="$(vc_normalize_empty "${usage_device:-}")"
 
+choose_device() {
+  local probe_json options selected
+  probe_json="$1"
+
+  options="$(printf '%s\n' "$probe_json" | jq -r '
+    .devices
+    | sort_by((if .live then 0 else 1 end), -(.max_volume_db // -999))
+    | .[]
+    | "\(.device)  \(if .live then "live" else "quiet" end)  max \((.max_volume_db // "n/a") | tostring)dB  \(.name)"
+  ')"
+
+  if [ -z "$options" ]; then
+    printf 'voice: no microphone devices found\n' >&2
+    return 1
+  fi
+
+  if ! selected="$(printf '%s\n' "$options" | "$GUM" choose --header "Choose default voice microphone:" --select-if-one)"; then
+    printf 'voice: microphone configuration cancelled\n' >&2
+    return 130
+  fi
+
+  printf '%s\n' "$selected" | awk '{ print $1 }'
+}
+
 if [ -z "$device" ]; then
-  if [ "$yes" != "true" ]; then
-    if [ "$json" = "true" ] || [ ! -t 0 ]; then
+  if [ "$json" = "true" ] || [ ! -t 0 ]; then
+    if [ "$yes" != "true" ]; then
       printf 'voice: microphone configuration without --device probes microphones; rerun with --yes to approve\n' >&2
       exit 1
     fi
-    if ! "$GUM" confirm "Probe microphones and save the loudest live input as the default?"; then
-      printf 'voice: microphone configuration cancelled\n' >&2
-      exit 130
+    probe_json="$(mise run -q mic:probe --json --yes)"
+    device="$(printf '%s\n' "$probe_json" | jq -r '.best_device // empty')"
+  else
+    if [ "$yes" != "true" ]; then
+      if ! "$GUM" confirm "Probe microphones so you can choose a default voice input?"; then
+        printf 'voice: microphone configuration cancelled\n' >&2
+        exit 130
+      fi
     fi
+    probe_json="$(mise run -q mic:probe --json --yes)"
+    device="$(choose_device "$probe_json")"
   fi
 
-  probe_json="$(mise run -q mic:probe --json --yes)"
-  device="$(printf '%s\n' "$probe_json" | jq -r '.best_device // empty')"
   if [ -z "$device" ]; then
     printf 'voice: no live microphone found to configure\n' >&2
     exit 1

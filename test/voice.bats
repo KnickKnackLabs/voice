@@ -292,7 +292,7 @@ EOF
   [ "$(jq -r '.devices[1].name' <<< "$output")" = "Live Mic" ]
 }
 
-@test "mic:configure saves the default capture device" {
+@test "mic:configure saves the explicit default capture device" {
   run voice mic:configure --device ':live' --json --yes
   [ "$status" -eq 0 ]
   [ "$(jq -r '.device' <<< "$output")" = ":live" ]
@@ -304,4 +304,11 @@ EOF
 
   run voice capture:stop --json
   [ "$status" -eq 0 ]
+}
+
+@test "mic:configure auto-picks the best live input in JSON mode" {
+  VOICE_TEST_FFMPEG_RECORD_IMMEDIATELY=1 run voice mic:configure --json --yes
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.device' <<< "$output")" = ":1" ]
+  [ "$(jq -r '.default_device' "$VOICE_CONFIG_HOME/config.json")" = ":1" ]
 }

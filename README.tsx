@@ -214,10 +214,10 @@ cd voice
 mise trust
 mise install
 
-# See local AVFoundation audio devices and find a live input.
+# See local AVFoundation audio devices, then choose a default mic.
 mise run devices
 mise run mic:probe
-mise run mic:configure --device :1
+mise run mic:configure
 
 # Foreground capture: record, transcribe, render.
 mise run capture --duration 5 --json
@@ -243,7 +243,8 @@ voice capture:toggle
 voice capture:status
 voice devices
 voice mic:probe --yes --json
-voice mic:configure --device :1
+voice mic:configure
+voice mic:configure --device :1 --yes
 voice transcribe path/to/audio.wav
 voice recording:list --json`}</CodeBlock>
     </Section>

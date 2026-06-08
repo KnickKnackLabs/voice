@@ -13,7 +13,7 @@
 A microphone is just another input surface.
 
 ![shape: mise + BATS](https://img.shields.io/badge/shape-mise%20%2B%20BATS-4EAA25?style=flat&logo=gnubash&logoColor=white)
-[![tests: 13](https://img.shields.io/badge/tests-13-brightgreen?style=flat)](test/)
+[![tests: 14](https://img.shields.io/badge/tests-14-brightgreen?style=flat)](test/)
 ![tasks: 13](https://img.shields.io/badge/tasks-13-8b5cf6?style=flat)
 ![lints: 9](https://img.shields.io/badge/lints-9-blue?style=flat)
 ![README: TSX](https://img.shields.io/badge/README-TSX-f472b6?style=flat)
@@ -45,10 +45,10 @@ cd voice
 mise trust
 mise install
 
-# See local AVFoundation audio devices and find a live input.
+# See local AVFoundation audio devices, then choose a default mic.
 mise run devices
 mise run mic:probe
-mise run mic:configure --device :1
+mise run mic:configure
 
 # Foreground capture: record, transcribe, render.
 mise run capture --duration 5 --json
@@ -74,7 +74,8 @@ voice capture:toggle
 voice capture:status
 voice devices
 voice mic:probe --yes --json
-voice mic:configure --device :1
+voice mic:configure
+voice mic:configure --device :1 --yes
 voice transcribe path/to/audio.wav
 voice recording:list --json
 ```
@@ -119,7 +120,7 @@ capture:toggle   Toggle background voice recording on or off
 capture:status   Show background voice recording status
 devices          List macOS AVFoundation recording devices visible to ffmpeg
 mic:probe        Probe microphone inputs for live audio
-mic:configure    Save the default microphone device for voice capture
+mic:configure    Choose and save the default microphone device for voice capture
 transcribe       Transcribe a captured audio file and refresh capture.md
 recording:list   List local voice capture artifacts
 ```
