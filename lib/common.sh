@@ -50,8 +50,67 @@ vc_state_file() {
   printf '%s/recording.json\n' "$(vc_state_home)"
 }
 
+vc_config_home() {
+  if [ -n "${VOICE_CONFIG_HOME:-}" ]; then
+    printf '%s\n' "$VOICE_CONFIG_HOME"
+    return 0
+  fi
+
+  if [ -n "${VOICE_CAPTURE_CONFIG_HOME:-}" ]; then
+    printf '%s\n' "$VOICE_CAPTURE_CONFIG_HOME"
+    return 0
+  fi
+
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    printf '%s/voice\n' "$XDG_CONFIG_HOME"
+    return 0
+  fi
+
+  printf '%s/.config/voice\n' "$HOME"
+}
+
+vc_config_file() {
+  printf '%s/config.json\n' "$(vc_config_home)"
+}
+
+vc_config_default_device() {
+  local config_file
+  config_file="$(vc_config_file)"
+  [ -f "$config_file" ] || return 1
+  jq -r '.default_device // empty' "$config_file" 2>/dev/null
+}
+
+vc_write_config_device() {
+  local device config_file tmp
+  device="$1"
+  config_file="$(vc_config_file)"
+  mkdir -p "$(dirname "$config_file")"
+
+  tmp="${config_file}.tmp.$$"
+  jq -n \
+    --arg default_device "$device" \
+    --arg updated_at "$(vc_iso_now)" \
+    '{default_device:$default_device,updated_at:$updated_at}' \
+    > "$tmp"
+  mv "$tmp" "$config_file"
+  printf '%s\n' "$config_file"
+}
+
 vc_default_device() {
-  printf '%s\n' "${VOICE_DEVICE:-${VOICE_CAPTURE_DEVICE:-:0}}"
+  local configured
+  if [ -n "${VOICE_DEVICE:-}" ]; then
+    printf '%s\n' "$VOICE_DEVICE"
+    return 0
+  fi
+  if [ -n "${VOICE_CAPTURE_DEVICE:-}" ]; then
+    printf '%s\n' "$VOICE_CAPTURE_DEVICE"
+    return 0
+  fi
+  if configured="$(vc_config_default_device)" && [ -n "$configured" ]; then
+    printf '%s\n' "$configured"
+    return 0
+  fi
+  printf ':0\n'
 }
 
 vc_now_id() {

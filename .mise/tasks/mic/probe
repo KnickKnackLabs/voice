@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+#MISE description="Probe microphone inputs for live audio"
+#USAGE flag "--yes" default=#false help="Approve recording short microphone samples"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON"
+#USAGE flag "--duration <seconds>" default="2" help="Seconds to record per device"
+#USAGE flag "--threshold-db <db>" default="-60" help="Max-volume threshold above which a device is considered live"
+#USAGE flag "--device <device>" default="" help="Probe one AVFoundation input such as :0; default probes all audio devices"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+FFMPEG="${FFMPEG:-ffmpeg}"
+yes="${usage_yes:-false}"
+json="${usage_json:-false}"
+duration="$(vc_normalize_empty "${usage_duration:-2}")"
+threshold_db="$(vc_normalize_empty "${usage_threshold_db:--60}")"
+requested_device="$(vc_normalize_empty "${usage_device:-}")"
+
+if [ -z "$duration" ]; then
+  duration="2"
+fi
+vc_require_duration "$duration"
+
+if ! awk -v value="$threshold_db" 'BEGIN { exit !(value ~ /^-?[0-9]+([.][0-9]+)?$/) }'; then
+  printf 'voice: threshold must be a number of dB, got %s\n' "$threshold_db" >&2
+  exit 1
+fi
+
+if [ "$yes" != "true" ]; then
+  if [ "$json" = "true" ] || [ ! -t 0 ]; then
+    printf 'voice: mic probe records short audio samples; rerun with --yes to approve\n' >&2
+    exit 1
+  fi
+  if ! "$GUM" confirm "Record ${duration}s microphone samples to check live inputs?"; then
+    printf 'voice: mic probe cancelled\n' >&2
+    exit 130
+  fi
+fi
+
+tmp_dir="$(mktemp -d -t voice-mic-probe.XXXXXX)"
+results_file="$tmp_dir/results.jsonl"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+probe_one() {
+  local device name audio record_output volume_output mean_volume max_volume live error
+  device="$1"
+  name="$2"
+  audio="$tmp_dir/${device//[^A-Za-z0-9]/_}.wav"
+  error=""
+  mean_volume="null"
+  max_volume="null"
+  live="false"
+
+  if ! record_output="$($FFMPEG -hide_banner -loglevel error -y -f avfoundation -i "$device" -t "$duration" -vn -ac 1 -ar 16000 -acodec pcm_s16le "$audio" </dev/null 2>&1)"; then
+    error="$record_output"
+  elif [ ! -s "$audio" ]; then
+    error="recording audio is missing or empty"
+  elif ! volume_output="$($FFMPEG -hide_banner -nostats -i "$audio" -af volumedetect -f null - </dev/null 2>&1)"; then
+    error="$volume_output"
+  else
+    mean_volume="$(printf '%s\n' "$volume_output" | awk '/mean_volume:/ { print $(NF-1); exit }')"
+    max_volume="$(printf '%s\n' "$volume_output" | awk '/max_volume:/ { print $(NF-1); exit }')"
+    if [ -z "$mean_volume" ]; then mean_volume="null"; fi
+    if [ -z "$max_volume" ]; then max_volume="null"; fi
+    if [ "$max_volume" != "null" ] && awk -v max="$max_volume" -v threshold="$threshold_db" 'BEGIN { exit !(max > threshold) }'; then
+      live="true"
+    fi
+  fi
+
+  jq -n \
+    --arg device "$device" \
+    --arg name "$name" \
+    --argjson duration_seconds "$duration" \
+    --argjson threshold_db "$threshold_db" \
+    --argjson mean_volume_db "$mean_volume" \
+    --argjson max_volume_db "$max_volume" \
+    --argjson live "$live" \
+    --arg error "$error" \
+    '{device:$device,name:$name,duration_seconds:$duration_seconds,threshold_db:$threshold_db,mean_volume_db:$mean_volume_db,max_volume_db:$max_volume_db,live:$live,error:(if $error == "" then null else $error end)}' \
+    >> "$results_file"
+}
+
+if [ -n "$requested_device" ]; then
+  probe_one "$requested_device" "$requested_device"
+else
+  devices_json="$(mise run -q devices --json)"
+  while IFS=$'\t' read -r index name; do
+    [ -n "$index" ] || continue
+    probe_one ":$index" "$name"
+  done < <(printf '%s\n' "$devices_json" | jq -r '.[] | select(.kind == "audio") | [.index, .name] | @tsv')
+fi
+
+if [ ! -s "$results_file" ]; then
+  printf 'voice: no audio input devices found\n' >&2
+  exit 1
+fi
+
+result_json="$(jq -s \
+  --argjson duration_seconds "$duration" \
+  --argjson threshold_db "$threshold_db" \
+  '{duration_seconds:$duration_seconds,threshold_db:$threshold_db,best_device:((map(select(.live)) | max_by(.max_volume_db) | .device) // null),devices:.}' \
+  "$results_file")"
+
+if [ "$json" = "true" ]; then
+  printf '%s\n' "$result_json"
+  exit 0
+fi
+
+best_device="$(printf '%s\n' "$result_json" | jq -r '.best_device // empty')"
+if [ -n "$best_device" ]; then
+  "$GUM" style --bold --foreground 46 -- "✓ Live microphone detected: $best_device"
+else
+  "$GUM" style --bold --foreground 214 -- "No live microphone detected"
+fi
+
+tsv="$tmp_dir/devices.tsv"
+printf 'Device\tName\tMax dB\tLive\n' > "$tsv"
+printf '%s\n' "$result_json" | jq -r '.devices[] | [.device, .name, (.max_volume_db // "n/a" | tostring), (if .live then "yes" else "no" end)] | @tsv' >> "$tsv"
+"$GUM" table --print --separator $'\t' --border rounded < "$tsv"

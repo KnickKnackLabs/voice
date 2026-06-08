@@ -5,6 +5,7 @@ load test_helper
 setup() {
   export VOICE_DATA_HOME="$BATS_TEST_TMPDIR/data"
   export VOICE_STATE_HOME="$BATS_TEST_TMPDIR/state"
+  export VOICE_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
   export VOICE_TEST_TRANSCRIPT="mock transcript from background capture"
   export VOICE_STOP_GRACE_ATTEMPTS=2
   export VOICE_STOP_TERM_ATTEMPTS=10
@@ -20,14 +21,70 @@ setup() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\t%s\n' "$$" "$*" >> "$VOICE_TEST_FFMPEG_LOG"
+
+for arg in "$@"; do
+  if [ "$arg" = "volumedetect" ]; then
+    input=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -i)
+          input="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    if grep -Eq 'device=:(live|1)' "$input" 2>/dev/null; then
+      printf '[Parsed_volumedetect_0] mean_volume: -35.0 dB\n' >&2
+      printf '[Parsed_volumedetect_0] max_volume: -20.0 dB\n' >&2
+    else
+      printf '[Parsed_volumedetect_0] mean_volume: -91.0 dB\n' >&2
+      printf '[Parsed_volumedetect_0] max_volume: -91.0 dB\n' >&2
+    fi
+    exit 0
+  fi
+
+done
+
+if [ "${1:-}" = "-hide_banner" ] && printf '%s\n' "$*" | grep -q -- '-list_devices true'; then
+  printf '[AVFoundation indev] AVFoundation video devices:\n' >&2
+  printf '[AVFoundation indev] [0] Mock Camera\n' >&2
+  printf '[AVFoundation indev] AVFoundation audio devices:\n' >&2
+  printf '[AVFoundation indev] [0] Quiet Mic\n' >&2
+  printf '[AVFoundation indev] [1] Live Mic\n' >&2
+  exit 1
+fi
+
+if [ "${VOICE_TEST_FFMPEG_DRAIN_STDIN:-0}" = "1" ]; then
+  dd bs=1 count=3 of=/dev/null 2>/dev/null || true
+fi
+
 out="${@: -1}"
+device=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -i)
+      device="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
 mkdir -p "$(dirname "$out")"
 write_audio() {
-  printf 'mock audio from pid %s\n' "$$" > "$out"
+  printf 'mock audio from pid %s\ndevice=%s\n' "$$" "$device" > "$out"
 }
 trap 'write_audio; exit 0' INT TERM
 if [ "${VOICE_TEST_FFMPEG_EXIT_IMMEDIATELY:-0}" = "1" ]; then
   exit 2
+fi
+if [ "${VOICE_TEST_FFMPEG_RECORD_IMMEDIATELY:-0}" = "1" ]; then
+  write_audio
+  exit 0
 fi
 while :; do
   sleep 0.05
@@ -98,6 +155,8 @@ state_file() {
     .mise/tasks/capture/stop \
     .mise/tasks/capture/toggle \
     .mise/tasks/devices \
+    .mise/tasks/mic/configure \
+    .mise/tasks/mic/probe \
     .mise/tasks/transcribe/_default \
     .mise/tasks/recording/list \
     lib/common.sh
@@ -208,4 +267,41 @@ EOF
   [ "$(jq 'length' <<< "$output")" -eq 1 ]
   [ "$(jq -r '.[0].status' <<< "$output")" = "transcribed" ]
   [ "$(jq -r '.[0].transcript_excerpt' <<< "$output")" = "$VOICE_TEST_TRANSCRIPT" ]
+}
+
+@test "mic:probe requires explicit approval for JSON/non-TTY use" {
+  run voice mic:probe --json
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"rerun with --yes to approve"* ]]
+}
+
+@test "mic:probe reports the loudest live audio device" {
+  VOICE_TEST_FFMPEG_RECORD_IMMEDIATELY=1 run voice mic:probe --json --yes --duration 1
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.best_device' <<< "$output")" = ":1" ]
+  [ "$(jq '.devices | length' <<< "$output")" -eq 2 ]
+  [ "$(jq -r '.devices[] | select(.device == ":0") | .live' <<< "$output")" = "false" ]
+  [ "$(jq -r '.devices[] | select(.device == ":1") | .live' <<< "$output")" = "true" ]
+}
+
+@test "mic:probe keeps ffmpeg stdin isolated from the device list" {
+  VOICE_TEST_FFMPEG_RECORD_IMMEDIATELY=1 VOICE_TEST_FFMPEG_DRAIN_STDIN=1 run voice mic:probe --json --yes --duration 1
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.best_device' <<< "$output")" = ":1" ]
+  [ "$(jq -r '.devices[1].device' <<< "$output")" = ":1" ]
+  [ "$(jq -r '.devices[1].name' <<< "$output")" = "Live Mic" ]
+}
+
+@test "mic:configure saves the default capture device" {
+  run voice mic:configure --device ':live' --json --yes
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.device' <<< "$output")" = ":live" ]
+  [ "$(jq -r '.default_device' "$VOICE_CONFIG_HOME/config.json")" = ":live" ]
+
+  run voice capture:start --json
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.device' "$(state_file)")" = ":live" ]
+
+  run voice capture:stop --json
+  [ "$status" -eq 0 ]
 }

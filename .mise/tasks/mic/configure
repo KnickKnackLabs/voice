@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#MISE description="Save the default microphone device for voice capture"
+#USAGE flag "--device <device>" default="" help="AVFoundation input such as :1; if omitted, probe and save the loudest live input"
+#USAGE flag "--yes" default=#false help="Approve writing voice config and any microphone probe"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+yes="${usage_yes:-false}"
+json="${usage_json:-false}"
+device="$(vc_normalize_empty "${usage_device:-}")"
+
+if [ -z "$device" ]; then
+  if [ "$yes" != "true" ]; then
+    if [ "$json" = "true" ] || [ ! -t 0 ]; then
+      printf 'voice: microphone configuration without --device probes microphones; rerun with --yes to approve\n' >&2
+      exit 1
+    fi
+    if ! "$GUM" confirm "Probe microphones and save the loudest live input as the default?"; then
+      printf 'voice: microphone configuration cancelled\n' >&2
+      exit 130
+    fi
+  fi
+
+  probe_json="$(mise run -q mic:probe --json --yes)"
+  device="$(printf '%s\n' "$probe_json" | jq -r '.best_device // empty')"
+  if [ -z "$device" ]; then
+    printf 'voice: no live microphone found to configure\n' >&2
+    exit 1
+  fi
+elif [ "$yes" != "true" ]; then
+  if [ "$json" = "true" ] || [ ! -t 0 ]; then
+    printf 'voice: writing microphone config requires --yes\n' >&2
+    exit 1
+  fi
+  if ! "$GUM" confirm "Save $device as the default voice microphone?"; then
+    printf 'voice: microphone configuration cancelled\n' >&2
+    exit 130
+  fi
+fi
+
+config_file="$(vc_write_config_device "$device")"
+
+if [ "$json" = "true" ]; then
+  jq -n \
+    --arg status "configured" \
+    --arg device "$device" \
+    --arg config_file "$config_file" \
+    '{status:$status,device:$device,config_file:$config_file}'
+  exit 0
+fi
+
+"$GUM" style --bold --foreground 46 -- "✓ Default voice microphone saved: $device"
+printf 'Config: %s\n' "$config_file"

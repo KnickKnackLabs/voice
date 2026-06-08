@@ -148,6 +148,8 @@ const commandDeck = [
   "capture:toggle",
   "capture:status",
   "devices",
+  "mic:probe",
+  "mic:configure",
   "transcribe",
   "recording:list",
 ]
@@ -212,8 +214,10 @@ cd voice
 mise trust
 mise install
 
-# See local AVFoundation audio devices.
+# See local AVFoundation audio devices and find a live input.
 mise run devices
+mise run mic:probe
+mise run mic:configure --device :1
 
 # Foreground capture: record, transcribe, render.
 mise run capture --duration 5 --json
@@ -238,6 +242,8 @@ voice capture:stop --json
 voice capture:toggle
 voice capture:status
 voice devices
+voice mic:probe --yes --json
+voice mic:configure --device :1
 voice transcribe path/to/audio.wav
 voice recording:list --json`}</CodeBlock>
     </Section>
@@ -261,10 +267,14 @@ voice recording:list --json`}</CodeBlock>
       <Paragraph>
         {"Background recording state lives under "}
         <Code>{"${XDG_STATE_HOME:-~/.local/state}/voice/recording.json"}</Code>
+        {". The configured default microphone lives in "}
+        <Code>{"${XDG_CONFIG_HOME:-~/.config}/voice/config.json"}</Code>
         {". Override with "}
         <Code>VOICE_DATA_HOME</Code>
-        {" and "}
+        {", "}
         <Code>VOICE_STATE_HOME</Code>
+        {", and "}
+        <Code>VOICE_CONFIG_HOME</Code>
         {" when testing or routing captures into a custom workspace."}
       </Paragraph>
     </Section>

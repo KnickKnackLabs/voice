@@ -13,8 +13,8 @@
 A microphone is just another input surface.
 
 ![shape: mise + BATS](https://img.shields.io/badge/shape-mise%20%2B%20BATS-4EAA25?style=flat&logo=gnubash&logoColor=white)
-[![tests: 9](https://img.shields.io/badge/tests-9-brightgreen?style=flat)](test/)
-![tasks: 11](https://img.shields.io/badge/tasks-11-8b5cf6?style=flat)
+[![tests: 13](https://img.shields.io/badge/tests-13-brightgreen?style=flat)](test/)
+![tasks: 13](https://img.shields.io/badge/tasks-13-8b5cf6?style=flat)
 ![lints: 9](https://img.shields.io/badge/lints-9-blue?style=flat)
 ![README: TSX](https://img.shields.io/badge/README-TSX-f472b6?style=flat)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](LICENSE)
@@ -45,8 +45,10 @@ cd voice
 mise trust
 mise install
 
-# See local AVFoundation audio devices.
+# See local AVFoundation audio devices and find a live input.
 mise run devices
+mise run mic:probe
+mise run mic:configure --device :1
 
 # Foreground capture: record, transcribe, render.
 mise run capture --duration 5 --json
@@ -71,6 +73,8 @@ voice capture:stop --json
 voice capture:toggle
 voice capture:status
 voice devices
+voice mic:probe --yes --json
+voice mic:configure --device :1
 voice transcribe path/to/audio.wav
 voice recording:list --json
 ```
@@ -96,7 +100,7 @@ ${XDG_DATA_HOME:-~/.local/share}/voice/captures/<capture-id>/
 └── capture.md
 ```
 
-Background recording state lives under `${XDG_STATE_HOME:-~/.local/state}/voice/recording.json`. Override with `VOICE_DATA_HOME` and `VOICE_STATE_HOME` when testing or routing captures into a custom workspace.
+Background recording state lives under `${XDG_STATE_HOME:-~/.local/state}/voice/recording.json`. The configured default microphone lives in `${XDG_CONFIG_HOME:-~/.config}/voice/config.json`. Override with `VOICE_DATA_HOME`, `VOICE_STATE_HOME`, and `VOICE_CONFIG_HOME` when testing or routing captures into a custom workspace.
 
 ## Why the artifact matters
 
@@ -114,6 +118,8 @@ capture:stop     Stop the active background voice recording and transcribe it
 capture:toggle   Toggle background voice recording on or off
 capture:status   Show background voice recording status
 devices          List macOS AVFoundation recording devices visible to ffmpeg
+mic:probe        Probe microphone inputs for live audio
+mic:configure    Save the default microphone device for voice capture
 transcribe       Transcribe a captured audio file and refresh capture.md
 recording:list   List local voice capture artifacts
 ```
