@@ -65,7 +65,15 @@ if [ "$json" = "true" ]; then
     --arg markdown "$markdown_file" \
     --arg device "$device" \
     --argjson max_duration_seconds "$max_duration" \
-    '{status:$status,capture_id:$capture_id,capture_dir:$capture_dir,audio:$audio,markdown:$markdown,device:$device,max_duration_seconds:$max_duration_seconds}'
+    '{
+      status: $status,
+      capture_id: $capture_id,
+      capture_dir: $capture_dir,
+      audio: $audio,
+      markdown: $markdown,
+      device: $device,
+      max_duration_seconds: $max_duration_seconds
+    }'
   exit 0
 fi
 
