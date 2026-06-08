@@ -62,8 +62,6 @@ if [ "$json" = "true" ]; then
   exit 0
 fi
 
-"$GUM" style --bold --foreground 46 -- "✓ Voice capture complete"
-
 if [ -t 1 ]; then
   VOICE_STDOUT_TTY=1
 else
@@ -75,13 +73,10 @@ markdown_link="$(vc_file_link "capture.md" "$markdown_file")"
 audio_link="$(vc_file_link "audio.wav" "$audio_file")"
 transcript_link="$(vc_file_link "transcript.txt" "$transcript_file")"
 
+printf '\n'
 {
-  printf 'Field\tValue\n'
-  printf 'id\t%s\n' "$capture_id"
-  printf 'folder\t%s\n' "$capture_dir_link"
-  printf 'markdown\t%s\n' "$markdown_link"
-  printf 'audio\t%s\n' "$audio_link"
-  printf 'transcript\t%s\n' "$transcript_link"
+  printf 'id\tfolder\tmarkdown\taudio\ttranscript\n'
+  printf '%s\t%s\t%s\t%s\t%s\n' "$capture_id" "$capture_dir_link" "$markdown_link" "$audio_link" "$transcript_link"
 } | "$GUM" table --print --separator $'\t' --border rounded
 
 printf '\n'
@@ -91,7 +86,3 @@ if [ -n "$transcript_text" ]; then
 else
   "$GUM" style --foreground 240 -- "  (empty transcript)"
 fi
-
-printf '\n'
-"$GUM" style --bold -- "Next"
-printf '  Open %s or route it to an agent follow-up.\n' "$markdown_link"
