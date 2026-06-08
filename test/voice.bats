@@ -78,7 +78,11 @@ mkdir -p "$(dirname "$out")"
 write_audio() {
   printf 'mock audio from pid %s\ndevice=%s\n' "$$" "$device" > "$out"
 }
-trap 'write_audio; exit 0' INT TERM
+if [ "${VOICE_TEST_FFMPEG_IGNORE_SIGNALS:-0}" = "1" ]; then
+  trap ':' INT TERM
+else
+  trap 'write_audio; exit 0' INT TERM
+fi
 if [ "${VOICE_TEST_FFMPEG_EXIT_IMMEDIATELY:-0}" = "1" ]; then
   exit 2
 fi
@@ -225,6 +229,20 @@ state_file() {
   run voice capture:cancel --json
   [ "$status" -ne 0 ]
   [[ "$output" == *"no active recording state"* ]]
+}
+
+@test "capture:cancel preserves state when recorder will not exit" {
+  VOICE_TEST_FFMPEG_IGNORE_SIGNALS=1 run voice capture:start --device ':test' --json
+  [ "$status" -eq 0 ]
+  pid="$(jq -r '.pid' <<< "$output")"
+
+  run voice capture:cancel --json
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"recorder did not exit after cancel signal"* ]]
+  [ -f "$(state_file)" ]
+  kill -0 "$pid"
+  kill -KILL "$pid"
+  rm -f "$(state_file)"
 }
 
 @test "capture:toggle starts when idle and stops when active" {
