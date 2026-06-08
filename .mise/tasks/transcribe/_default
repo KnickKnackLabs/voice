@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#MISE description="Transcribe a captured audio file and refresh capture.md"
+#USAGE arg "<audio_file>" help="Audio file to transcribe"
+#USAGE flag "-o --output <file>" default="" help="Transcript path; defaults to transcript.txt beside audio"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+MONKEYS="${MONKEYS:-monkeys}"
+
+audio_file="${usage_audio_file:-}"
+output="$(vc_normalize_empty "${usage_output:-}")"
+
+if [ -z "$audio_file" ]; then
+  printf 'voice: audio file is required\n' >&2
+  exit 1
+fi
+
+if [ ! -f "$audio_file" ]; then
+  printf 'voice: audio file not found: %s\n' "$audio_file" >&2
+  exit 1
+fi
+
+capture_dir="$(cd "$(dirname "$audio_file")" && pwd)"
+if [ -z "$output" ]; then
+  output="$capture_dir/transcript.txt"
+fi
+
+log_file="$(mktemp -t voice-transcribe.XXXXXX)"
+if ! "$MONKEYS" listen -o "$output" "$audio_file" >/dev/null 2>"$log_file"; then
+  cat "$log_file" >&2
+  rm -f "$log_file"
+  exit 1
+fi
+rm -f "$log_file"
+
+capture_markdown="$capture_dir/capture.md"
+device="unknown"
+duration="0"
+if [ -f "$capture_markdown" ]; then
+  parsed_device="$(awk -F': ' '/^device:/ { gsub(/^"|"$/, "", $2); print $2; exit }' "$capture_markdown")"
+  parsed_duration="$(awk -F': ' '/^duration_seconds:/ { print $2; exit }' "$capture_markdown")"
+  if [ -n "$parsed_device" ]; then
+    device="$parsed_device"
+  fi
+  if [ -n "$parsed_duration" ]; then
+    duration="$parsed_duration"
+  fi
+fi
+
+vc_write_markdown "$capture_dir" "transcribed" "$device" "$duration" >/dev/null
+printf '%s\n' "$output"

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#MISE description="List macOS AVFoundation recording devices visible to ffmpeg"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON"
+
+set -euo pipefail
+
+GUM="${GUM:-gum}"
+FFMPEG="${FFMPEG:-ffmpeg}"
+json="${usage_json:-false}"
+
+if ! output="$("$FFMPEG" -hide_banner -f avfoundation -list_devices true -i "" 2>&1)"; then
+  : # ffmpeg exits non-zero after listing devices; the listing is still useful.
+fi
+
+tsv="$(mktemp -t voice-capture-devices.XXXXXX)"
+trap 'rm -f "$tsv"' EXIT
+
+printf 'Kind\tIndex\tName\n' > "$tsv"
+printf '%s\n' "$output" | awk '
+  /AVFoundation video devices:/ { kind="video"; next }
+  /AVFoundation audio devices:/ { kind="audio"; next }
+  /\[[0-9]+\] / && kind != "" {
+    idx=$0
+    sub(/^.*\[/, "", idx)
+    sub(/\].*$/, "", idx)
+    name=$0
+    sub(/^.*\[[0-9]+\] /, "", name)
+    printf "%s\t%s\t%s\n", kind, idx, name
+  }
+' >> "$tsv"
+
+if [ "$json" = "true" ]; then
+  jq -R -s '
+    split("\n")
+    | .[1:]
+    | map(select(length > 0) | split("\t") | {kind: .[0], index: (.[1] | tonumber), name: .[2]})
+  ' "$tsv"
+  exit 0
+fi
+
+"$GUM" style --bold -- "AVFoundation devices"
+"$GUM" table --print --separator $'\t' --border rounded < "$tsv"

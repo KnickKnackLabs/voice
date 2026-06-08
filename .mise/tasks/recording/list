@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#MISE description="List local voice capture artifacts"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON"
+#USAGE flag "--limit <count>" default="20" help="Maximum captures to show; 0 means all"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+json="${usage_json:-false}"
+limit="$(vc_normalize_empty "${usage_limit:-20}")"
+
+case "$limit" in
+  ''|*[!0-9]*)
+    printf 'voice: --limit must be a non-negative integer, got %s\n' "$limit" >&2
+    exit 1
+    ;;
+esac
+
+capture_root="$(vc_capture_root)"
+if [ ! -d "$capture_root" ]; then
+  if [ "$json" = "true" ]; then
+    printf '[]\n'
+  else
+    printf 'No voice captures found at %s\n' "$capture_root"
+  fi
+  exit 0
+fi
+
+dirs_file="$(mktemp -t voice-recording-list.XXXXXX)"
+json_file="$(mktemp -t voice-recording-list-json.XXXXXX)"
+rows_file="$(mktemp -t voice-recording-list-rows.XXXXXX)"
+trap 'rm -f "$dirs_file" "$json_file" "$rows_file"' EXIT
+
+find "$capture_root" -mindepth 1 -maxdepth 1 -type d | sort -r > "$dirs_file"
+if [ "$limit" != "0" ]; then
+  limited_file="${dirs_file}.limited"
+  head -n "$limit" "$dirs_file" > "$limited_file"
+  mv "$limited_file" "$dirs_file"
+fi
+
+printf 'ID\tStatus\tCreated\tTranscript\n' > "$rows_file"
+: > "$json_file"
+
+while IFS= read -r capture_dir; do
+  [ -n "$capture_dir" ] || continue
+  markdown="$capture_dir/capture.md"
+  transcript_file="$capture_dir/transcript.txt"
+  capture_id="$(vc_capture_id_from_dir "$capture_dir")"
+  if ! status="$(vc_frontmatter_value "$markdown" status)"; then
+    status=""
+  fi
+  if ! created="$(vc_frontmatter_value "$markdown" created)"; then
+    created=""
+  fi
+  if [ -z "$status" ]; then
+    status="unknown"
+  fi
+  transcript=""
+  if [ -s "$transcript_file" ]; then
+    transcript="$(tr '\n' ' ' < "$transcript_file" | sed 's/[[:space:]]*$//' | awk '{ if (length($0) > 90) print substr($0, 1, 87) "..."; else print $0 }')"
+  fi
+
+  jq -n \
+    --arg capture_id "$capture_id" \
+    --arg capture_dir "$capture_dir" \
+    --arg markdown "$markdown" \
+    --arg transcript_file "$transcript_file" \
+    --arg status "$status" \
+    --arg created "$created" \
+    --arg transcript_excerpt "$transcript" \
+    '{capture_id:$capture_id,capture_dir:$capture_dir,markdown:$markdown,transcript_file:$transcript_file,status:$status,created:$created,transcript_excerpt:$transcript_excerpt}' \
+    >> "$json_file"
+  printf '%s\t%s\t%s\t%s\n' "$capture_id" "$status" "${created:-—}" "${transcript:-—}" >> "$rows_file"
+done < "$dirs_file"
+
+if [ "$json" = "true" ]; then
+  jq -s '.' "$json_file"
+  exit 0
+fi
+
+if [ ! -s "$json_file" ]; then
+  printf 'No voice captures found at %s\n' "$capture_root"
+  exit 0
+fi
+
+"$GUM" table --print --separator $'\t' --border rounded < "$rows_file"

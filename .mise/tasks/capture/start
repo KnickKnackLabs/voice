@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+#MISE description="Start a background voice recording"
+#USAGE flag "--device <device>" default="" help="FFmpeg AVFoundation input; defaults to VOICE_DEVICE/VOICE_CAPTURE_DEVICE or :0"
+#USAGE flag "--max-duration <seconds>" default="300" help="Safety cap in seconds; set 0 to disable"
+#USAGE flag "-o --output-dir <dir>" default="" help="Capture root override; defaults to XDG data"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON instead of human-readable output"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+FFMPEG="${FFMPEG:-ffmpeg}"
+
+device="$(vc_normalize_empty "${usage_device:-}")"
+max_duration="$(vc_normalize_empty "${usage_max_duration:-300}")"
+output_dir="$(vc_normalize_empty "${usage_output_dir:-}")"
+json="${usage_json:-false}"
+
+if [ -z "$device" ]; then
+  device="$(vc_default_device)"
+fi
+if [ -z "$max_duration" ]; then
+  max_duration="300"
+fi
+if [ "$max_duration" != "0" ]; then
+  vc_require_duration "$max_duration"
+fi
+
+state_file="$(vc_state_file)"
+state_status="$(vc_state_status)"
+if [ "$state_status" = "active" ]; then
+  pid="$(vc_state_pid)"
+  printf 'voice: recording already active (pid %s; state %s)\n' "$pid" "$state_file" >&2
+  exit 1
+fi
+if [ "$state_status" = "stale" ]; then
+  vc_clear_state
+fi
+
+capture_dir="$(vc_new_capture_dir "$output_dir")"
+audio="$capture_dir/audio.wav"
+log_file="$capture_dir/ffmpeg.log"
+started_at="$(vc_iso_now)"
+
+ffmpeg_args=(
+  -hide_banner
+  -loglevel error
+  -y
+  -f avfoundation
+  -i "$device"
+)
+if [ "$max_duration" != "0" ]; then
+  ffmpeg_args+=(-t "$max_duration")
+fi
+ffmpeg_args+=(
+  -vn
+  -ac 1
+  -ar 16000
+  -acodec pcm_s16le
+  "$audio"
+)
+
+"$FFMPEG" "${ffmpeg_args[@]}" </dev/null >"$log_file" 2>&1 &
+ffmpeg_pid=$!
+
+sleep 0.2
+if ! vc_pid_alive "$ffmpeg_pid"; then
+  if ! wait "$ffmpeg_pid" >/dev/null 2>&1; then
+    : # Failure details are in the ffmpeg log below.
+  fi
+  if [ -s "$log_file" ]; then
+    cat "$log_file" >&2
+  fi
+  printf 'voice: ffmpeg exited before recording became active\n' >&2
+  exit 1
+fi
+
+vc_write_markdown "$capture_dir" "recording" "$device" "$max_duration" >/dev/null
+vc_write_state "$ffmpeg_pid" "$capture_dir" "$audio" "$device" "$started_at" "$max_duration"
+
+if [ "$json" = "true" ]; then
+  jq -n \
+    --arg status "active" \
+    --argjson pid "$ffmpeg_pid" \
+    --arg capture_id "$(vc_capture_id_from_dir "$capture_dir")" \
+    --arg capture_dir "$capture_dir" \
+    --arg audio "$audio" \
+    --arg state_file "$state_file" \
+    --arg device "$device" \
+    --arg started_at "$started_at" \
+    --argjson max_duration_seconds "$max_duration" \
+    '{status:$status,pid:$pid,capture_id:$capture_id,capture_dir:$capture_dir,audio:$audio,state_file:$state_file,device:$device,started_at:$started_at,max_duration_seconds:$max_duration_seconds}'
+  exit 0
+fi
+
+"$GUM" style --bold --foreground 212 -- "● Recording voice capture"
+printf 'Capture: %s\n' "$capture_dir"
+printf 'Press the toggle hotkey again or run capture:stop to finish.\n'
+if [ "$max_duration" != "0" ]; then
+  printf 'Safety cap: %ss\n' "$max_duration"
+fi

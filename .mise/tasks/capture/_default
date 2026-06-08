@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#MISE description="Record, transcribe, and render one local voice capture"
+#USAGE flag "-d --duration <seconds>" default="" help="Maximum recording length in seconds; omit for manual stop"
+#USAGE flag "--device <device>" default="" help="FFmpeg AVFoundation input; defaults to VOICE_DEVICE/VOICE_CAPTURE_DEVICE or :0"
+#USAGE flag "-o --output-dir <dir>" default="" help="Capture root override; defaults to XDG data"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON instead of human-readable output"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+
+duration="$(vc_normalize_empty "${usage_duration:-}")"
+device="$(vc_normalize_empty "${usage_device:-}")"
+output_dir="$(vc_normalize_empty "${usage_output_dir:-}")"
+json="${usage_json:-false}"
+if [ -z "$device" ]; then
+  device="$(vc_default_device)"
+fi
+if [ -n "$duration" ]; then
+  vc_require_duration "$duration"
+fi
+
+record_args=(capture:record --device "$device")
+if [ -n "$duration" ]; then
+  record_args+=(--duration "$duration")
+fi
+if [ -n "$output_dir" ]; then
+  record_args+=(--output-dir "$output_dir")
+fi
+
+if [ "$json" = "true" ]; then
+  audio_file="$(VOICE_QUIET=1 mise run "${record_args[@]}")"
+  transcript_file="$(mise run transcribe "$audio_file")"
+else
+  audio_file="$(mise run "${record_args[@]}")"
+  if [ -t 1 ] && [ -t 2 ]; then
+    transcript_file="$("$GUM" spin --spinner dot --title "Transcribing audio…" --show-error -- mise run transcribe "$audio_file")"
+  else
+    transcript_file="$(mise run transcribe "$audio_file")"
+  fi
+fi
+
+capture_dir="$(dirname "$audio_file")"
+capture_id="$(basename "$capture_dir")"
+markdown_file="$capture_dir/capture.md"
+transcript_text=""
+if [ -f "$transcript_file" ]; then
+  transcript_text="$(cat "$transcript_file")"
+fi
+
+if [ "$json" = "true" ]; then
+  jq -n \
+    --arg capture_id "$capture_id" \
+    --arg capture_dir "$capture_dir" \
+    --arg audio "$audio_file" \
+    --arg transcript_file "$transcript_file" \
+    --arg markdown "$markdown_file" \
+    --arg transcript "$transcript_text" \
+    '{capture_id:$capture_id,capture_dir:$capture_dir,audio:$audio,transcript_file:$transcript_file,markdown:$markdown,transcript:$transcript}'
+  exit 0
+fi
+
+"$GUM" style --bold --foreground 46 -- "✓ Voice capture complete"
+
+if [ -t 1 ]; then
+  VOICE_STDOUT_TTY=1
+else
+  VOICE_STDOUT_TTY=0
+fi
+
+capture_dir_link="$(vc_file_link "capture folder" "$capture_dir")"
+markdown_link="$(vc_file_link "capture.md" "$markdown_file")"
+audio_link="$(vc_file_link "audio.wav" "$audio_file")"
+transcript_link="$(vc_file_link "transcript.txt" "$transcript_file")"
+
+{
+  printf 'Field\tValue\n'
+  printf 'id\t%s\n' "$capture_id"
+  printf 'folder\t%s\n' "$capture_dir_link"
+  printf 'markdown\t%s\n' "$markdown_link"
+  printf 'audio\t%s\n' "$audio_link"
+  printf 'transcript\t%s\n' "$transcript_link"
+} | "$GUM" table --print --separator $'\t' --border rounded
+
+printf '\n'
+"$GUM" style --bold -- "Transcript"
+if [ -n "$transcript_text" ]; then
+  printf '%s\n' "$transcript_text" | sed 's/^/  /'
+else
+  "$GUM" style --foreground 240 -- "  (empty transcript)"
+fi
+
+printf '\n'
+"$GUM" style --bold -- "Next"
+printf '  Open %s or route it to an agent follow-up.\n' "$markdown_link"

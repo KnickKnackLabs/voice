@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+#MISE description="Record a local voice message to the XDG data store"
+#USAGE flag "-d --duration <seconds>" default="" help="Maximum recording length in seconds; omit for manual stop"
+#USAGE flag "--device <device>" default="" help="FFmpeg AVFoundation input; defaults to VOICE_DEVICE/VOICE_CAPTURE_DEVICE or :0"
+#USAGE flag "-o --output-dir <dir>" default="" help="Capture root override; defaults to XDG data"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+FFMPEG="${FFMPEG:-ffmpeg}"
+QUIET="${VOICE_QUIET:-${VOICE_CAPTURE_QUIET:-false}}"
+
+duration="$(vc_normalize_empty "${usage_duration:-}")"
+device="$(vc_normalize_empty "${usage_device:-}")"
+output_dir="$(vc_normalize_empty "${usage_output_dir:-}")"
+if [ -z "$device" ]; then
+  device="$(vc_default_device)"
+fi
+if [ -n "$duration" ]; then
+  vc_require_duration "$duration"
+fi
+
+capture_dir="$(vc_new_capture_dir "$output_dir")"
+audio="$capture_dir/audio.wav"
+
+ffmpeg_args=(
+  -hide_banner
+  -loglevel error
+  -y
+  -f avfoundation
+  -i "$device"
+)
+if [ -n "$duration" ]; then
+  ffmpeg_args+=(-t "$duration")
+fi
+ffmpeg_args+=(
+  -vn
+  -ac 1
+  -ar 16000
+  -acodec pcm_s16le
+  "$audio"
+)
+
+show_ui() {
+  [ "$QUIET" != "true" ] && [ "$QUIET" != "1" ]
+}
+
+if show_ui; then
+  "$GUM" style --bold --foreground 212 -- "● Recording voice capture" >&2
+  if [ -n "$duration" ]; then
+    "$GUM" style --foreground 240 -- "Press Return/Ctrl-D to stop early; max ${duration}s." >&2
+  else
+    "$GUM" style --foreground 240 -- "Press Return/Ctrl-D to stop; Ctrl-C aborts." >&2
+  fi
+fi
+
+"$FFMPEG" "${ffmpeg_args[@]}" </dev/null &
+ffmpeg_pid=$!
+
+cleanup() {
+  if kill -0 "$ffmpeg_pid" >/dev/null 2>&1; then
+    if ! kill -INT "$ffmpeg_pid" >/dev/null 2>&1; then
+      : # Process may have exited between kill -0 and kill.
+    fi
+    if ! wait "$ffmpeg_pid" >/dev/null 2>&1; then
+      : # Cleanup path tolerates ffmpeg's signal exit.
+    fi
+  fi
+}
+trap 'if show_ui; then printf "\n" >&2; "$GUM" style --foreground 196 -- "✗ Recording aborted" >&2; fi; cleanup; exit 130' INT TERM
+
+elapsed=0
+stop_requested=0
+stdin_is_tty=false
+if [ -t 0 ]; then
+  stdin_is_tty=true
+fi
+while kill -0 "$ffmpeg_pid" >/dev/null 2>&1; do
+  if show_ui; then
+    if [ -n "$duration" ]; then
+      remaining=$((duration - elapsed))
+      if [ "$remaining" -lt 0 ]; then
+        remaining=0
+      fi
+      printf '\rrecording… %ss elapsed, %ss max ' "$elapsed" "$duration" >&2
+    else
+      printf '\rrecording… %ss elapsed ' "$elapsed" >&2
+    fi
+  fi
+
+  if IFS= read -r -t 1 _stop; then
+    stop_requested=1
+    break
+  else
+    read_status=$?
+    if [ "$read_status" -le 128 ]; then
+      # EOF should stop open-ended manual recordings, and it should stop
+      # terminal-driven timed recordings. In headless/non-interactive timed
+      # runs, EOF just means there is no keyboard available; let -t finish.
+      if [ -z "$duration" ] || [ "$stdin_is_tty" = "true" ]; then
+        stop_requested=1
+        break
+      fi
+    fi
+  fi
+
+  elapsed=$((elapsed + 1))
+done
+
+if [ "$stop_requested" -eq 1 ]; then
+  if show_ui; then
+    printf '\n' >&2
+    "$GUM" style --foreground 240 -- "Stopping recording…" >&2
+  fi
+  if ! kill -INT "$ffmpeg_pid" >/dev/null 2>&1; then
+    : # Process may have already exited after user stop.
+  fi
+fi
+
+if ! wait "$ffmpeg_pid"; then
+  if [ -f "$audio" ]; then
+    : # Manual stop via SIGINT can make ffmpeg exit non-zero after writing audio.
+  else
+    exit 1
+  fi
+fi
+trap - INT TERM
+
+if show_ui; then
+  printf '\r' >&2
+  "$GUM" style --foreground 46 -- "✓ Recording saved" >&2
+fi
+
+actual_duration="$duration"
+if [ -z "$actual_duration" ] || [ "$stop_requested" -eq 1 ]; then
+  actual_duration="$elapsed"
+fi
+
+vc_write_markdown "$capture_dir" "recorded" "$device" "$actual_duration" >/dev/null
+printf '%s\n' "$audio"

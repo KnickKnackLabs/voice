@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#MISE description="Stop the active background voice recording and transcribe it"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON instead of human-readable output"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+GUM="${GUM:-gum}"
+json="${usage_json:-false}"
+grace_attempts="${VOICE_STOP_GRACE_ATTEMPTS:-${VOICE_CAPTURE_STOP_GRACE_ATTEMPTS:-50}}"
+term_attempts="${VOICE_STOP_TERM_ATTEMPTS:-${VOICE_CAPTURE_STOP_TERM_ATTEMPTS:-20}}"
+
+state_file="$(vc_state_file)"
+if [ ! -f "$state_file" ]; then
+  printf 'voice: no active recording state found\n' >&2
+  exit 1
+fi
+
+pid="$(jq -r '.pid // empty' "$state_file")"
+capture_dir="$(jq -r '.capture_dir // empty' "$state_file")"
+audio="$(jq -r '.audio // empty' "$state_file")"
+device="$(jq -r '.device // "unknown"' "$state_file")"
+max_duration="$(jq -r '.max_duration_seconds // 0' "$state_file")"
+
+if [ -z "$capture_dir" ] || [ -z "$audio" ]; then
+  printf 'voice: invalid recording state: %s\n' "$state_file" >&2
+  exit 1
+fi
+
+if vc_pid_alive "$pid"; then
+  if ! kill -INT "$pid" >/dev/null 2>&1; then
+    : # Process may exit between liveness check and signal.
+  fi
+
+  # The recorder was started by a previous command invocation, so this shell
+  # cannot reliably `wait` on it. Poll for process exit instead, giving ffmpeg
+  # time to finalize the audio file after SIGINT.
+  for _ in $(seq 1 "$grace_attempts"); do
+    if ! vc_pid_alive "$pid"; then
+      break
+    fi
+    sleep 0.1
+  done
+
+  if vc_pid_alive "$pid"; then
+    if ! kill -TERM "$pid" >/dev/null 2>&1; then
+      : # Process may already have exited.
+    fi
+    for _ in $(seq 1 "$term_attempts"); do
+      if ! vc_pid_alive "$pid"; then
+        break
+      fi
+      sleep 0.1
+    done
+  fi
+fi
+
+if [ ! -s "$audio" ]; then
+  printf 'voice: recording audio is missing or empty: %s\n' "$audio" >&2
+  exit 1
+fi
+
+if [ -t 1 ] && [ -t 2 ] && [ "$json" != "true" ]; then
+  transcript_file="$($GUM spin --spinner dot --title "Transcribing audio…" --show-error -- mise run transcribe "$audio")"
+else
+  transcript_file="$(mise run transcribe "$audio")"
+fi
+vc_clear_state
+
+markdown_file="$capture_dir/capture.md"
+transcript_text=""
+if [ -f "$transcript_file" ]; then
+  transcript_text="$(cat "$transcript_file")"
+fi
+
+if [ "$json" = "true" ]; then
+  jq -n \
+    --arg status "transcribed" \
+    --arg capture_id "$(vc_capture_id_from_dir "$capture_dir")" \
+    --arg capture_dir "$capture_dir" \
+    --arg audio "$audio" \
+    --arg transcript_file "$transcript_file" \
+    --arg markdown "$markdown_file" \
+    --arg transcript "$transcript_text" \
+    --arg device "$device" \
+    --argjson max_duration_seconds "$max_duration" \
+    '{status:$status,capture_id:$capture_id,capture_dir:$capture_dir,audio:$audio,transcript_file:$transcript_file,markdown:$markdown,transcript:$transcript,device:$device,max_duration_seconds:$max_duration_seconds}'
+  exit 0
+fi
+
+"$GUM" style --bold --foreground 46 -- "✓ Voice capture stopped"
+printf 'Capture: %s\n' "$capture_dir"
+printf 'Transcript: %s\n' "$transcript_file"
+if [ -n "$transcript_text" ]; then
+  printf '\n%s\n' "$transcript_text"
+fi

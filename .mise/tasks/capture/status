@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+#MISE description="Show background voice recording status"
+#USAGE flag "--json" default=#false help="Print machine-readable JSON"
+
+set -euo pipefail
+
+source "$MISE_CONFIG_ROOT/lib/common.sh"
+
+json="${usage_json:-false}"
+state_file="$(vc_state_file)"
+status="$(vc_state_status)"
+
+pid=""
+capture_id=""
+capture_dir=""
+audio=""
+device=""
+started_at=""
+max_duration="0"
+elapsed="0"
+
+json_get() {
+  expr="$1"
+  fallback="$2"
+  if ! value="$(jq -r "$expr" "$state_file" 2>/dev/null)"; then
+    value="$fallback"
+  fi
+  if [ -z "$value" ] || [ "$value" = "null" ]; then
+    value="$fallback"
+  fi
+  printf '%s\n' "$value"
+}
+
+parse_epoch() {
+  value="$1"
+  if epoch="$(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$value" '+%s' 2>/dev/null)"; then
+    printf '%s\n' "$epoch"
+    return 0
+  fi
+  if epoch="$(date -d "$value" '+%s' 2>/dev/null)"; then
+    printf '%s\n' "$epoch"
+    return 0
+  fi
+  printf '0\n'
+}
+
+if [ -f "$state_file" ]; then
+  pid="$(json_get '.pid // empty' '')"
+  capture_id="$(json_get '.capture_id // empty' '')"
+  capture_dir="$(json_get '.capture_dir // empty' '')"
+  audio="$(json_get '.audio // empty' '')"
+  device="$(json_get '.device // empty' '')"
+  started_at="$(json_get '.started_at // empty' '')"
+  max_duration="$(json_get '.max_duration_seconds // 0' '0')"
+  if [ -n "$started_at" ]; then
+    start_epoch="$(parse_epoch "$started_at")"
+    now_epoch="$(date '+%s')"
+    if [ "$start_epoch" -gt 0 ]; then
+      elapsed="$((now_epoch - start_epoch))"
+    fi
+  fi
+fi
+
+if [ "$json" = "true" ]; then
+  jq -n \
+    --arg status "$status" \
+    --arg state_file "$state_file" \
+    --arg pid "$pid" \
+    --arg capture_id "$capture_id" \
+    --arg capture_dir "$capture_dir" \
+    --arg audio "$audio" \
+    --arg device "$device" \
+    --arg started_at "$started_at" \
+    --argjson elapsed_seconds "$elapsed" \
+    --argjson max_duration_seconds "$max_duration" \
+    '{status:$status,state_file:$state_file,pid:(if $pid == "" then null else ($pid|tonumber) end),capture_id:$capture_id,capture_dir:$capture_dir,audio:$audio,device:$device,started_at:$started_at,elapsed_seconds:$elapsed_seconds,max_duration_seconds:$max_duration_seconds}'
+  exit 0
+fi
+
+case "$status" in
+  idle)
+    printf 'idle\n'
+    ;;
+  active)
+    printf 'active: %s (%ss elapsed, pid %s)\n' "$capture_id" "$elapsed" "$pid"
+    printf '%s\n' "$capture_dir"
+    ;;
+  stale)
+    printf 'stale: %s (pid %s is not running)\n' "$capture_id" "$pid"
+    printf '%s\n' "$capture_dir"
+    ;;
+esac
