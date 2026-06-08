@@ -51,6 +51,11 @@ if vc_pid_alive "$pid"; then
       sleep 0.1
     done
   fi
+
+  if vc_pid_alive "$pid"; then
+    printf 'voice: recorder did not exit after cancel signal (pid %s); state preserved: %s\n' "$pid" "$state_file" >&2
+    exit 1
+  fi
 fi
 
 markdown_file="$(vc_write_markdown "$capture_dir" "cancelled" "$device" "$max_duration")"
