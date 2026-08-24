@@ -10,6 +10,7 @@ setup() {
   export VOICE_STOP_GRACE_ATTEMPTS=2
   export VOICE_STOP_TERM_ATTEMPTS=10
   export VOICE_TEST_FFMPEG_LOG="$BATS_TEST_TMPDIR/ffmpeg-calls.log"
+  export VOICE_TEST_FFMPEG_READY="$BATS_TEST_TMPDIR/ffmpeg-ready"
   export VOICE_TEST_MONKEYS_LOG="$BATS_TEST_TMPDIR/monkeys-calls.log"
   : > "$VOICE_TEST_FFMPEG_LOG"
   : > "$VOICE_TEST_MONKEYS_LOG"
@@ -83,6 +84,7 @@ if [ "${VOICE_TEST_FFMPEG_IGNORE_SIGNALS:-0}" = "1" ]; then
 else
   trap 'write_audio; exit 0' INT TERM
 fi
+: > "$VOICE_TEST_FFMPEG_READY"
 if [ "${VOICE_TEST_FFMPEG_EXIT_IMMEDIATELY:-0}" = "1" ]; then
   exit 2
 fi
@@ -146,6 +148,15 @@ state_file() {
   printf '%s/recording.json\n' "$VOICE_STATE_HOME"
 }
 
+wait_for_mock_ffmpeg_ready() {
+  local attempts=0
+  while [ ! -f "$VOICE_TEST_FFMPEG_READY" ]; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -lt 50 ] || return 1
+    sleep 0.02
+  done
+}
+
 @test "standard voice surfaces exist" {
   for path in \
     mise.toml \
@@ -180,6 +191,7 @@ state_file() {
 @test "capture:start creates active state and refuses a second active recording" {
   run voice capture:start --device ':test' --max-duration 300 --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
 
   pid="$(jq -r '.pid' <<< "$output")"
   capture_dir="$(jq -r '.capture_dir' <<< "$output")"
@@ -200,6 +212,7 @@ state_file() {
 @test "capture:stop finalizes, transcribes, and clears state" {
   run voice capture:start --device ':test' --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
   capture_dir="$(jq -r '.capture_dir' <<< "$output")"
 
   run voice capture:stop --json
@@ -214,6 +227,7 @@ state_file() {
 @test "capture:cancel stops without transcribing and clears state" {
   run voice capture:start --device ':test' --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
   capture_dir="$(jq -r '.capture_dir' <<< "$output")"
 
   run voice capture:cancel --json
@@ -232,8 +246,11 @@ state_file() {
 }
 
 @test "capture:cancel preserves state when recorder will not exit" {
-  VOICE_TEST_FFMPEG_IGNORE_SIGNALS=1 run voice capture:start --device ':test' --json
+  export VOICE_TEST_FFMPEG_IGNORE_SIGNALS=1
+  run voice capture:start --device ':test' --json
+  unset VOICE_TEST_FFMPEG_IGNORE_SIGNALS
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
   pid="$(jq -r '.pid' <<< "$output")"
 
   run voice capture:cancel --json
@@ -248,6 +265,7 @@ state_file() {
 @test "capture:toggle starts when idle and stops when active" {
   run voice capture:toggle --device ':test' --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
   [ "$(jq -r '.status' <<< "$output")" = "active" ]
   [ -f "$(state_file)" ]
 
@@ -265,6 +283,7 @@ EOF
 
   run voice capture:start --device ':new' --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
   [ "$(jq -r '.device' "$(state_file)")" = ":new" ]
   [ "$(jq -r '.pid' "$(state_file)")" != "999999" ]
 
@@ -281,6 +300,7 @@ EOF
 @test "capture:stop leaves audio and state recoverable when transcription fails" {
   run voice capture:start --device ':test' --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
   capture_dir="$(jq -r '.capture_dir' <<< "$output")"
 
   VOICE_TEST_MONKEYS_FAIL=1 run voice capture:stop --json
@@ -297,6 +317,7 @@ EOF
 @test "recording:list reports transcribed captures" {
   run voice capture:start --device ':test' --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
 
   run voice capture:stop --json
   [ "$status" -eq 0 ]
@@ -339,6 +360,7 @@ EOF
 
   run voice capture:start --json
   [ "$status" -eq 0 ]
+  wait_for_mock_ffmpeg_ready
   [ "$(jq -r '.device' "$(state_file)")" = ":live" ]
 
   run voice capture:stop --json

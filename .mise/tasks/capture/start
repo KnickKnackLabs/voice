@@ -4,6 +4,7 @@
 #USAGE flag "--max-duration <seconds>" default="300" help="Safety cap in seconds; set 0 to disable"
 #USAGE flag "-o --output-dir <dir>" default="" help="Capture root override; defaults to XDG data"
 #USAGE flag "--json" default=#false help="Print machine-readable JSON instead of human-readable output"
+#USAGE example "voice capture:start --device :1 --max-duration 300 --json" header="Start a bounded background recording"
 
 set -euo pipefail
 
@@ -61,7 +62,7 @@ ffmpeg_args+=(
   "$audio"
 )
 
-"$FFMPEG" "${ffmpeg_args[@]}" </dev/null >"$log_file" 2>&1 &
+"$FFMPEG" ${ffmpeg_args[@]+"${ffmpeg_args[@]}"} </dev/null >"$log_file" 2>&1 &
 ffmpeg_pid=$!
 
 sleep 0.2

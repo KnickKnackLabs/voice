@@ -3,6 +3,7 @@
 #USAGE flag "-d --duration <seconds>" default="" help="Maximum recording length in seconds; omit for manual stop"
 #USAGE flag "--device <device>" default="" help="FFmpeg AVFoundation input; defaults to VOICE_DEVICE/VOICE_CAPTURE_DEVICE or :0"
 #USAGE flag "-o --output-dir <dir>" default="" help="Capture root override; defaults to XDG data"
+#USAGE example "voice capture:record --duration 5 --device :1" header="Record five seconds from one microphone"
 
 set -euo pipefail
 
@@ -99,7 +100,7 @@ if show_ui; then
   render_recording_status
 fi
 
-"$FFMPEG" "${ffmpeg_args[@]}" </dev/null &
+"$FFMPEG" ${ffmpeg_args[@]+"${ffmpeg_args[@]}"} </dev/null &
 ffmpeg_pid=$!
 
 cleanup() {

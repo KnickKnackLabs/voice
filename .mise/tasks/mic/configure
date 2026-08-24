@@ -3,6 +3,7 @@
 #USAGE flag "--device <device>" default="" help="AVFoundation input such as :1; if omitted, probe and choose interactively"
 #USAGE flag "--yes" default=#false help="Approve writing voice config and any microphone probe"
 #USAGE flag "--json" default=#false help="Print machine-readable JSON; without --device, saves the loudest live input"
+#USAGE example "voice mic:configure --device :1 --yes --json" header="Save an approved default microphone"
 
 set -euo pipefail
 

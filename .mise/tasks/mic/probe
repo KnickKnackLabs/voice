@@ -5,6 +5,7 @@
 #USAGE flag "--duration <seconds>" default="2" help="Seconds to record per device"
 #USAGE flag "--threshold-db <db>" default="-60" help="Max-volume threshold above which a device is considered live"
 #USAGE flag "--device <device>" default="" help="Probe one AVFoundation input such as :0; default probes all audio devices"
+#USAGE example "voice mic:probe --device :1 --yes --json" header="Probe one approved microphone"
 
 set -euo pipefail
 
