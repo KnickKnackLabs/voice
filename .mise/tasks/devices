@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="List macOS AVFoundation recording devices visible to ffmpeg"
 #USAGE flag "--json" default=#false help="Print machine-readable JSON"
+#USAGE example "voice devices --json" header="List detected AVFoundation devices as JSON"
 
 set -euo pipefail
 

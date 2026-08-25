@@ -2,6 +2,7 @@
 #MISE description="Transcribe a captured audio file and refresh capture.md"
 #USAGE arg "<audio_file>" help="Audio file to transcribe"
 #USAGE flag "-o --output <file>" default="" help="Transcript path; defaults to transcript.txt beside audio"
+#USAGE example "voice transcribe path/to/audio.wav" header="Transcribe one captured audio file"
 
 set -euo pipefail
 
