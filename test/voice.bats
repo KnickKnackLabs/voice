@@ -357,6 +357,29 @@ EOF
   [ "$(jq -r '.devices[] | select(.device == ":1") | .live' <<< "$output")" = "true" ]
 }
 
+@test "mic:probe stops before recording when device-list filtering fails" {
+  export VOICE_TEST_REAL_JQ="$(command -v jq)"
+  cat > "$mock_bin/jq-fail-device-filter" <<'MOCK_JQ'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${2:-}" = '.[] | select(.kind == "audio") | [.index, .name] | @tsv' ]; then
+  printf '0\tQuiet Mic\n'
+  printf 'mock device filter failed\n' >&2
+  exit 7
+fi
+exec "$VOICE_TEST_REAL_JQ" "$@"
+MOCK_JQ
+  chmod +x "$mock_bin/jq-fail-device-filter"
+
+  JQ="$mock_bin/jq-fail-device-filter" VOICE_TEST_FFMPEG_RECORD_IMMEDIATELY=1 \
+    run voice mic:probe --json --yes --duration 1
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"mock device filter failed"* ]]
+  [ "$(wc -l < "$VOICE_TEST_FFMPEG_LOG" | tr -d ' ')" -eq 1 ]
+  grep -q -- '-list_devices true' "$VOICE_TEST_FFMPEG_LOG"
+}
+
 @test "mic:probe keeps ffmpeg stdin isolated from the device list" {
   VOICE_TEST_FFMPEG_RECORD_IMMEDIATELY=1 VOICE_TEST_FFMPEG_DRAIN_STDIN=1 run voice mic:probe --json --yes --duration 1
   [ "$status" -eq 0 ]

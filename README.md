@@ -13,7 +13,7 @@
 A microphone is just another input surface.
 
 ![shape: mise + BATS](https://img.shields.io/badge/shape-mise%20%2B%20BATS-4EAA25?style=flat&logo=gnubash&logoColor=white)
-[![tests: 24](https://img.shields.io/badge/tests-24-brightgreen?style=flat)](test/)
+[![tests: 25](https://img.shields.io/badge/tests-25-brightgreen?style=flat)](test/)
 ![tasks: 14](https://img.shields.io/badge/tasks-14-8b5cf6?style=flat)
 ![lints: 19](https://img.shields.io/badge/lints-19-blue?style=flat)
 ![README: TSX](https://img.shields.io/badge/README-TSX-f472b6?style=flat)

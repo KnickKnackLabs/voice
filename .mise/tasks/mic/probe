@@ -13,6 +13,7 @@ source "$MISE_CONFIG_ROOT/lib/common.sh"
 
 GUM="${GUM:-gum}"
 FFMPEG="${FFMPEG:-ffmpeg}"
+JQ="${JQ:-jq}"
 yes="${usage_yes:-false}"
 json="${usage_json:-false}"
 duration="$(vc_normalize_empty "${usage_duration:-2}")"
@@ -70,7 +71,9 @@ probe_one() {
     fi
   fi
 
-  jq -n \
+  # jq owns these variables; the shell must leave the filter literal.
+  # shellcheck disable=SC2016
+  "$JQ" -n \
     --arg device "$device" \
     --arg name "$name" \
     --argjson duration_seconds "$duration" \
@@ -87,10 +90,14 @@ if [ -n "$requested_device" ]; then
   probe_one "$requested_device" "$requested_device"
 else
   devices_json="$(mise run -q devices --json)"
+  device_list="$tmp_dir/input-devices.tsv"
+  printf '%s\n' "$devices_json" | "$JQ" -r \
+    '.[] | select(.kind == "audio") | [.index, .name] | @tsv' > "$device_list"
+
   while IFS=$'\t' read -r index name; do
     [ -n "$index" ] || continue
     probe_one ":$index" "$name"
-  done < <(printf '%s\n' "$devices_json" | jq -r '.[] | select(.kind == "audio") | [.index, .name] | @tsv')
+  done < "$device_list"
 fi
 
 if [ ! -s "$results_file" ]; then
@@ -98,7 +105,9 @@ if [ ! -s "$results_file" ]; then
   exit 1
 fi
 
-result_json="$(jq -s \
+# jq owns these variables; the shell must leave the filter literal.
+# shellcheck disable=SC2016
+result_json="$("$JQ" -s \
   --argjson duration_seconds "$duration" \
   --argjson threshold_db "$threshold_db" \
   '{duration_seconds:$duration_seconds,threshold_db:$threshold_db,best_device:((map(select(.live)) | max_by(.max_volume_db) | .device) // null),devices:.}' \
@@ -109,7 +118,7 @@ if [ "$json" = "true" ]; then
   exit 0
 fi
 
-best_device="$(printf '%s\n' "$result_json" | jq -r '.best_device // empty')"
+best_device="$(printf '%s\n' "$result_json" | "$JQ" -r '.best_device // empty')"
 if [ -n "$best_device" ]; then
   "$GUM" style --bold --foreground 46 -- "✓ Live microphone detected: $best_device"
 else
@@ -118,5 +127,5 @@ fi
 
 tsv="$tmp_dir/devices.tsv"
 printf 'Device\tName\tMax dB\tLive\n' > "$tsv"
-printf '%s\n' "$result_json" | jq -r '.devices[] | [.device, .name, (.max_volume_db // "n/a" | tostring), (if .live then "yes" else "no" end)] | @tsv' >> "$tsv"
+printf '%s\n' "$result_json" | "$JQ" -r '.devices[] | [.device, .name, (.max_volume_db // "n/a" | tostring), (if .live then "yes" else "no" end)] | @tsv' >> "$tsv"
 "$GUM" table --print --separator $'\t' --border rounded < "$tsv"
