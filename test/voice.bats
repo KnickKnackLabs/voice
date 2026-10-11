@@ -105,7 +105,7 @@ if [ "${VOICE_TEST_MONKEYS_FAIL:-0}" = "1" ]; then
   printf 'mock transcription failed\n' >&2
   exit 3
 fi
-if [ "${1:-}" != "listen" ]; then
+if [ "${1:-}" != "hear" ]; then
   printf 'unexpected monkeys command: %s\n' "$*" >&2
   exit 2
 fi
@@ -179,6 +179,19 @@ wait_for_mock_ffmpeg_ready() {
   do
     [ -e "$REPO_DIR/$path" ]
   done
+}
+
+@test "transcribe sends the existing audio file to monkeys hear" {
+  capture_dir="$BATS_TEST_TMPDIR/fictional capture"
+  mkdir -p "$capture_dir"
+  printf 'fictional audio\n' > "$capture_dir/audio.wav"
+
+  run voice transcribe "$capture_dir/audio.wav"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$capture_dir/transcript.txt" ]
+  [ "$(cat "$capture_dir/transcript.txt")" = "$VOICE_TEST_TRANSCRIPT" ]
+  [ "$(cat "$VOICE_TEST_MONKEYS_LOG")" = "hear -o $capture_dir/transcript.txt $capture_dir/audio.wav" ]
+  grep -q "$VOICE_TEST_TRANSCRIPT" "$capture_dir/capture.md"
 }
 
 @test "capture:status reports idle with no state" {

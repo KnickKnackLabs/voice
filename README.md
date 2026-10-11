@@ -13,9 +13,9 @@
 A microphone is just another input surface.
 
 ![shape: mise + BATS](https://img.shields.io/badge/shape-mise%20%2B%20BATS-4EAA25?style=flat&logo=gnubash&logoColor=white)
-[![tests: 23](https://img.shields.io/badge/tests-23-brightgreen?style=flat)](test/)
+[![tests: 24](https://img.shields.io/badge/tests-24-brightgreen?style=flat)](test/)
 ![tasks: 14](https://img.shields.io/badge/tasks-14-8b5cf6?style=flat)
-![lints: 17](https://img.shields.io/badge/lints-17-blue?style=flat)
+![lints: 19](https://img.shields.io/badge/lints-19-blue?style=flat)
 ![README: TSX](https://img.shields.io/badge/README-TSX-f472b6?style=flat)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](LICENSE)
 
@@ -25,7 +25,7 @@ A microphone is just another input surface.
 
 ## What this is
 
-`voice` records microphone audio with ffmpeg, sends the audio through `monkeys listen`, and writes a capture artifact that has enough structure for humans and agents to use it later.
+`voice` records microphone audio with ffmpeg, sends the audio through `monkeys hear`, and writes a capture artifact that has enough structure for humans and agents to use it later.
 
 The first shape is deliberately batch-oriented: capture a thought, transcribe it, inspect or route it. That makes it useful for agent sessions, hotkeys, and Pi extensions without pretending every transcript is ready to auto-submit.
 

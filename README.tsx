@@ -211,7 +211,7 @@ const readme = (
       <Paragraph>
         <Code>voice</Code>
         {" records microphone audio with ffmpeg, sends the audio through "}
-        <Code>monkeys listen</Code>
+        <Code>monkeys hear</Code>
         {", and writes a capture artifact that has enough structure for humans and agents to use it later."}
       </Paragraph>
 

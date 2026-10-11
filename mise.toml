@@ -14,7 +14,7 @@ ffmpeg = "8.0.1"
 gum = "0.17.0"
 jq = "1.8.1"
 "shiv:codebase" = "0.4"
-"shiv:monkeys" = "0.1"
+"shiv:monkeys" = "0.2"
 "shiv:readme" = "0.3"
 
 [_.codebase]

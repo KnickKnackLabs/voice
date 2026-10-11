@@ -29,7 +29,7 @@ if [ -z "$output" ]; then
 fi
 
 log_file="$(mktemp -t voice-transcribe.XXXXXX)"
-if ! "$MONKEYS" listen -o "$output" "$audio_file" >/dev/null 2>"$log_file"; then
+if ! "$MONKEYS" hear -o "$output" "$audio_file" >/dev/null 2>"$log_file"; then
   cat "$log_file" >&2
   rm -f "$log_file"
   exit 1
